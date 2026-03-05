@@ -37,7 +37,7 @@ def drawdown_duration_days(returns: pd.Series) -> int:
             in_dd = True
             current += 1
             longest = max(longest, current)
-        elif in_dd and v == 0.0:
+        elif in_dd and v >= 0.0:
             current += 1
             longest = max(longest, current)
             in_dd = False

@@ -25,6 +25,8 @@ def close_to_close_rv(prices: pd.Series, window: int) -> pd.Series:
     paper that uses sample std.
     """
     lr = _log_returns(prices)
+    # min_periods is window - 1 because the first log return is always NaN
+    # (no prior price), so a W-bar window contains at most W - 1 observations.
     rv = lr.rolling(window=window, min_periods=window - 1).std(ddof=0)
     return rv * np.sqrt(TRADING_DAYS)
 

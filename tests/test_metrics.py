@@ -29,6 +29,14 @@ def test_drawdown_duration_days():
     assert drawdown_duration_days(returns) == 3
 
 
+def test_drawdown_duration_closes_on_overshoot():
+    # Recovery bar overshoots the prior peak; duration still closes the
+    # drawdown window. Previously buggy when the recovery branch used
+    # `v == 0.0` strict equality.
+    returns = pd.Series([0.0, 0.10, -0.05, -0.01, 0.16015])
+    assert drawdown_duration_days(returns) == 3
+
+
 def test_sortino_positive_when_upside_dominates():
     rng = np.random.default_rng(0)
     up = rng.normal(0.002, 0.005, 500)
