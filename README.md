@@ -109,14 +109,62 @@ Phase 1 completion: **0.609** (in-band).
 
 ## Phase 1 results
 
+### Spec-direction baseline (short front / long second)
+
 | window | Sharpe | ann. return | ann. vol | max DD | DD duration |
 |---|---|---|---|---|---|
 | train (2013-2018) | −0.74 | −14.7% | 19.9% | −59.6% | 1415 days |
 | test (2019-2024)  | −0.60 | −11.7% | 19.5% | −58.2% | 1438 days |
 
-Both Sharpe numbers are negative; both reflect the structural property
-described above, not a bug. The VXX correlation gate (0.609) confirms
-the engine.
+Both Sharpe numbers are negative. The VXX correlation gate (0.609)
+confirms the engine is directionally consistent with a short-VIX
+construction; the negative cumulative PnL is the structural dollar-
+neutral-calendar property described above, not an implementation bug.
+
+### Direction-flip comparison
+
+The spec's "short front / long second" direction is the same calendar
+rotated; flipping it produces a genuinely different PnL profile. The
+baseline captures `r_second − r_front`; the flipped variant captures
+`r_front − r_second`. On the full sample, **the flipped direction is
+the profitable one**:
+
+| variant | train Sharpe | test Sharpe | train ret | test ret | train MDD | test MDD |
+|---|---|---|---|---|---|---|
+| short front / long second (spec) | −0.74 | −0.60 | −14.7% | −11.7% | −60% | −58% |
+| **long front / short second** | **+0.64** | **+0.46** | **+12.7%** | **+9.1%** | **−15%** | **−17%** |
+
+Mechanically, the flipped variant captures a small daily positive drift
+because front-month VX decays *proportionally faster* than second-month
+VX in quiet contango (`r_front` is more negative per $ than `r_second`),
+while the vol-spike losses that savage the baseline are much smaller on
+the long-front side because the short-second leg absorbs the majority
+of the spike. This means the commonly-taught "short front / long second
+calendar carries the VIX term structure" framing — which is the spec's
+framing — is wrong in sign.
+
+This is the most useful Phase 1 finding: naïve quant-retail intuition
+about the VIX calendar has the sign backwards, and a simple replication
+reveals it out of sample. Phase 2 (Strategy B put-writing) will sit
+alongside the flipped direction as the other candidate workable
+construction.
+
+### Transaction-cost sensitivity
+
+Sweep of `tc_bps_per_roll` ∈ {1, 5, 10, 20, 30} for the spec baseline:
+
+| tc (bps) | train Sharpe | test Sharpe | train MDD | test MDD |
+|---|---|---|---|---|
+| 1  | −0.74 | −0.60 | −60% | −58% |
+| 5  | −0.80 | −0.66 | −63% | −61% |
+| 10 | −0.87 | −0.73 | −66% | −65% |
+| 20 | −1.01 | −0.88 | −72% | −71% |
+| 30 | −1.14 | −1.02 | −77% | −76% |
+
+The result is monotone in costs as expected. The delta between 1 bp and
+30 bps is ~0.4 Sharpe points — real, but smaller than the ~1.3 Sharpe
+gap between the spec direction and the flipped direction at 1 bp. Costs
+are not the primary driver of the negative result; the construction is.
 
 ## Limitations (Phase 1)
 
