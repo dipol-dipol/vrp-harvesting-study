@@ -324,6 +324,75 @@ python scripts/run_strategy_c.py                 # threshold=2 baseline
 python scripts/run_strategy_c_sensitivity.py     # train-then-test sweep
 ```
 
+## Phase 4 — Tail-Risk Overlays
+
+Three overlays from the project spec, applied to Strategy C (spread,
+threshold = −2 vol points — the Phase 3 train-optimal). Parameters are
+pinned to the spec, not tuned on this data.
+
+- **Overlay 1 — VIX regime filter.** Cash out when VIX > 30 or VX term
+  structure inverts (front > second). Re-enter after 7 consecutive calm
+  days (VIX < 25 and front < second).
+- **Overlay 2 — Realized-vol position scaling.** Scale daily returns by
+  `min(1, 0.10 / rv_20)` of the strategy's own returns. Target 10%
+  annualized vol, no upsizing above 1.0×.
+- **Overlay 3 — Tail-hedge spend.** Spend 15% of premium collected each
+  cycle on a 5-delta 1-month SPX put; mark daily.
+
+| configuration | train Sharpe | test Sharpe | train MDD | test MDD |
+|---|---|---|---|---|
+| base C(spread, thr=−2) | +1.24 | +0.81 | −2.7% | −8.5% |
+| + O1 regime filter      | +0.98 | **+1.03** | −2.8% | **−2.5%** |
+| + O2 vol scale 10%      | +1.24 | +0.84 | −2.7% | −8.0% |
+| + O3 tail hedge 15%     | +0.54 | +0.17 | −5.9% | −12.8% |
+| all three combined      | +0.12 | +0.00 | −8.1% | −15.7% |
+
+### Verdict
+
+**Overlay 1 is the clear winner, Overlay 3 is a net drag, and
+combining all three destroys performance.**
+
+The VIX regime filter *improves* out-of-sample Sharpe (0.81 → 1.03) and
+cuts maximum drawdown by a factor of three (−8.5% → −2.5%). The cost
+shows up in the training window (Sharpe drops from 1.24 to 0.98) because
+the filter cashes out of otherwise-profitable months whenever VIX probes
+above 30, but the test window contains the COVID regime where the
+filter pays for itself many times over. This is the expected behavior
+for a well-calibrated regime filter.
+
+The realized-vol scaling overlay is marginal. Spread + light-gate is
+already a low-vol construction, so the target_vol/rv ratio usually
+exceeds the 1.0× leverage cap and the overlay is inactive. Only in the
+most extreme vol spikes does it downsize, which offers a tiny
+improvement.
+
+The tail-hedge spend is a *negative*-value overlay in this sample.
+Spending 15% of premium monthly on 5-delta puts is expensive: most
+months the put expires worthless, and the spread's long −0.10Δ leg
+already covers the crash path. The tail hedge adds redundant protection
+that costs more in premium than it saves in drawdown. This lines up
+with AQR's Israelov & Nielsen (2015) critique — naïve OTM-put
+hedging on top of an already-hedged position is systematic return
+erosion, not protection.
+
+Combining all three is the worst configuration: the regime filter and
+tail hedge protect against the same tail twice (once by cashing out,
+once by being long a far-OTM put), so you pay both costs to hedge one
+risk. Plus the vol-scaling layer triggers more often on the
+tail-hedge-distorted return series, dragging everything further.
+
+**Best configuration identified in Phase 4: Strategy C (spread, thr=−2)
++ Overlay 1 alone.** Out-of-sample Sharpe 1.03, max drawdown 2.5%,
+active most months. That's the strongest single construction in the
+study, and it now replaces the unadorned gated spread as the input to
+Phase 4's meta-allocation.
+
+## Reproduce overlays
+
+```bash
+python scripts/run_strategy_c_overlays.py
+```
+
 ## Limitations (Phase 1)
 
 - Dollar-neutral continuous rolling is an approximation of how a real
