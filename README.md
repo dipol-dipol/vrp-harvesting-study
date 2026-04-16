@@ -393,6 +393,123 @@ Phase 4's meta-allocation.
 python scripts/run_strategy_c_overlays.py
 ```
 
+## Phase 5 — Tail-Risk Analysis
+
+Three required components from the project spec: moving-block bootstrap
+of returns, October 1987 extrapolated stress test, and an explicit
+disclosure of what the backtest cannot tell us.
+
+### Moving-Block Bootstrap
+
+Method: fixed-size moving-block bootstrap (Kunsch 1989), block size 40
+trading days (middle of the spec's 20-60 range), 2000 simulations per
+construction. Preserves within-block autocorrelation and vol clustering;
+breaks cross-block autocorrelation. Acceptable for monthly-rebalance
+strategies, a lower bound on true tail risk for strategies whose vol
+events cluster beyond 40 trading days.
+
+Bootstrap Sharpe 5/50/95 percentiles, in-sample shown for context:
+
+| construction                    | Sharpe p05 | Sharpe p50 | Sharpe p95 | in-sample |
+|---|---|---|---|---|
+| A short-front (spec baseline)   | −0.86 | −0.65 | −0.42 | −0.67 |
+| A long-front (flipped)          | +0.21 | +0.49 | +0.77 | +0.51 |
+| B PUT index                     | +0.18 | +0.69 | +1.40 | +0.67 |
+| B synth spread                  | +0.38 | +0.86 | +1.40 | +0.86 |
+| C spread thr=−2                 | +0.45 | +1.00 | +1.55 | +0.97 |
+| **C spread thr=−2 + O1**        | **+0.61** | **+1.01** | **+1.46** | **+1.01** |
+
+A short-front is reliably negative across the entire bootstrap
+distribution — even the 95th-percentile Sharpe is still negative. That
+is exactly what "naive dollar-neutral calendar spread has negative
+expected return" looks like when you refuse to let a lucky sample
+rescue it. Every other construction is reliably positive at the 5th
+percentile, and C+O1 has the tightest positive distribution by a
+comfortable margin.
+
+### Daily 1%-VaR and Expected Shortfall
+
+| construction                | 1% VaR (daily) | 1% ES (daily) |
+|---|---|---|
+| A short-front               | −4.65% | −6.22% |
+| A long-front                | −2.45% | −3.86% |
+| B PUT index                 | −2.27% | −3.79% |
+| B synth spread              | −0.88% | −1.14% |
+| C spread thr=−2             | −0.76% | −1.07% |
+| **C spread thr=−2 + O1**    | **−0.51%** | **−0.67%** |
+
+Daily-tail ordering mirrors the bootstrap: A short-front has the
+deepest tail, and each subsequent construction in the study
+progressively tightens it. The regime filter on top of the gated spread
+cuts 1%-VaR roughly in half relative to the ungated spread — it cashes
+out exactly the days that would have been in the left tail.
+
+### October 1987 Stress Test
+
+Scenario (historical record, no tuning): SPX −20.5%, VIX-equivalent +30
+vol points, VX term structure inverts (front +30, second +20). Pre-
+shock levels: front VX=20, second=22, S=100, IV=20%, K_short=95,
+K_long=85, 20 days remaining in the cycle.
+
+Single-day PnL as % of gross capital:
+
+| construction                | single-day PnL |
+|---|---|
+| A short-front               | **−29.5%** |
+| A long-front (mirror gain)  | +29.5% |
+| B synth naked −0.30Δ        | −16.3% |
+| B synth spread              | −8.7% |
+| C spread thr=−2             | −8.7% |
+| C spread + O1               | −8.7% (day 0); O1 cashes out day 1+ |
+
+A short-front in the 1987 scenario loses nearly a third of capital in
+a single day — this is not a survivable trade for any scaled allocator.
+The mirror gain on A long-front (+29.5%) is mechanically correct but
+unlikely to be realized in practice because of margin calls and
+exchange risk. B naked loses ~16%; the spread caps the loss at ~9%
+thanks to the long −0.10Δ leg. **On a surprise shock, the regime
+filter does not protect on day 0** — VIX is under 30 the day before a
+black-swan event by definition — so C+O1 takes the same day-0 hit as
+the ungated spread. Its protection kicks in on day 1+ by cashing out
+of any continuing drawdown.
+
+### Honest limitations
+
+1. **Sample thinness.** The 2013-2024 sample contains at most four
+   major short-vol-blow-up events (2015 flash crash, Feb 2018
+   Volmageddon, March 2020 COVID, 2022 bear). Four realizations is not
+   enough to characterize the true tail. Bootstrap confidence intervals
+   read as in-distribution estimates conditional on the observed
+   sample, not as population statistics.
+2. **1987 extrapolation is approximate.** VIX did not exist in 1987;
+   IV levels are back-fit estimates. Option markets had nothing
+   resembling modern electronic execution — you could not exit short
+   puts at theoretical prices on Oct 19. Treat the single-day PnL
+   figures as lower-bound losses for the short-vol constructions.
+3. **MBB breaks cross-block autocorrelation.** For strategies whose
+   drawdowns cluster beyond 40 trading days (plausible for naive
+   short-vol), the bootstrap understates drawdown-duration risk. A
+   stationary bootstrap with geometric block lengths would handle this
+   more gracefully; not implemented here to keep the Phase 5 scope
+   tight.
+4. **Transaction costs during crises.** Strategy B/C marks option
+   legs at BS theoretical prices. Real-market spreads widen
+   dramatically during vol spikes (the 1987 put market effectively
+   stopped quoting). Live PnL under stress is worse than the BS-mark
+   assumption.
+5. **This strategy is short volatility.** Everything above is a
+   rigorous characterization of *how catastrophically* it will lose
+   money in a vol spike, not a claim of safety. The spread + regime
+   filter combination is the best construction identified in the
+   study, but it is still short-vol and still exposed to the left
+   tail. Treat position sizing accordingly.
+
+## Reproduce tail-risk analysis
+
+```bash
+python scripts/run_tail_risk.py
+```
+
 ## Limitations (Phase 1)
 
 - Dollar-neutral continuous rolling is an approximation of how a real
